@@ -1,0 +1,50 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.mypy_cache": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/*.pyc": {
+            "when": "$(basename).py"
+        },
+        "**/__pycache__": true
+    },
+    "files.autoSave": "onFocusChange",
+    "python.pythonPath": "/Users/chhenning/.pyenv/versions/3.10.0/envs/cooper/bin/python",
+    "workbench.editor.showTabs": "multiple",
+    "python.analysis.extraPaths": [
+        "/Users/chhenning/projects/notes/projects",
+        "/Users/chhenning/projects/notes/books/Crafting_Interpreters"
+    ],
+    "python.analysis.autoImportCompletions": false,
+    "jupyter.runStartupCommands": "%config IPCompleter.use_jedi = False",
+    "restructuredtext.languageServer.disabled": true,
+    "[javascript]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[css]": {
+        "editor.suggest.insertMode": "replace",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[html]": {
+        "editor.suggest.insertMode": "replace",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "vscode.html-language-features"
+    },
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "liveServer.settings.port": 5501,
+    "cSpell.words": [
+        "imdb",
+        "Overproof"
+    ], 
+    "jupyter.notebookFileRoot": "/Users/chhenning/repos/notes",
+    "workbench.editor.enablePreview": false,
+    "cSpell.ignoreWords": ["matplotlib", "Hettinger", "pd", "printoptions"]
+}

@@ -1,6 +1,8 @@
-# physarum-step-by-step
+# Physarum Step by Step
 
 Physarum slime mold simulation in Python — built step by step from scratch, from a single moving particle to emergent network behavior.
+
+See [Learning Path](./learning_path.md).
 
 ## Example
 
