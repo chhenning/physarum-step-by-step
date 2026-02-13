@@ -183,6 +183,7 @@ def draw(screen, trail_map):
         for x in range(WIDTH):
             color = trail_to_color(trail_map[y][x])
             rect = (x * PIXEL_SCALE, y * PIXEL_SCALE, PIXEL_SCALE, PIXEL_SCALE)
+            # Draw a filled rectangle (one grid cell) with the given color
             screen.fill(color, rect)
 
 
@@ -195,9 +196,13 @@ def main():
         print(f"Unknown mode '{mode}'. Choose from: {', '.join(MODES)}")
         sys.exit(1)
 
+    # Start up all pygame subsystems (video, audio, etc.)
     pygame.init()
+    # Create a window with the given pixel dimensions
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    # Set the text shown in the window's title bar
     pygame.display.set_caption(f"Physarum — {mode}")
+    # Create a clock to control the frame rate
     clock = pygame.time.Clock()
 
     particles = MODES[mode]()
@@ -206,10 +211,14 @@ def main():
 
     running = True
     while running:
+        # Check all user inputs (clicks, keys, window close)
         for event in pygame.event.get():
+            # User clicked the window's close button
             if event.type == pygame.QUIT:
                 running = False
+            # User pressed a key on the keyboard
             elif event.type == pygame.KEYDOWN:
+                # The key pressed was Escape
                 if event.key == pygame.K_ESCAPE:
                     running = False
 
@@ -223,18 +232,23 @@ def main():
         trail_map = diffuse(trail_map)
         decay(trail_map)
 
+        # Clear the entire screen to black before drawing the new frame
         screen.fill((0, 0, 0))
         draw(screen, trail_map)
+        # Push the newly drawn frame to the screen (swap front/back buffers)
         pygame.display.flip()
 
         elapsed = (time.time() - start) * 1000
+        # Update the title bar with live stats
         pygame.display.set_caption(
             f"Physarum — {mode}  |  tick={tick}  particles={NUM_PARTICLES}  {elapsed:.0f}ms"
         )
 
+        # Wait just enough to cap the loop at FPS frames per second
         clock.tick(FPS)
         tick += 1
 
+    # Shut down all pygame subsystems and close the window
     pygame.quit()
 
 
