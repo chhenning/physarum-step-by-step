@@ -69,12 +69,12 @@ def generate_random_configs(n):
     for _ in range(n):
         configs.append(
             {
-                "sensor_angle": np.random.uniform(0.6, 1.4),
-                "sensor_distance": np.random.uniform(20.0, 65.0),
-                "rotation_angle": np.random.uniform(0.3, 1.4),
-                "step_distance": np.random.uniform(1.0, 1.7),
-                "deposit": 5.0,
-                "decay": 0.1,
+                "sensor_angle": np.float32(np.random.uniform(0.6, 1.4)),
+                "sensor_distance": np.float32(np.random.uniform(20.0, 65.0)),
+                "rotation_angle": np.float32(np.random.uniform(0.3, 1.4)),
+                "step_distance": np.float32(np.random.uniform(1.0, 1.7)),
+                "deposit": np.float32(5.0),
+                "decay": np.float32(0.1),
             }
         )
     return configs
@@ -96,9 +96,9 @@ def generate_random_attraction(n):
 
 
 def spawn_random(num_particles):
-    px = np.random.uniform(0, WIDTH, num_particles)
-    py = np.random.uniform(0, HEIGHT, num_particles)
-    ph = np.random.uniform(0, 2 * np.pi, num_particles)
+    px = np.random.uniform(0, WIDTH, num_particles).astype(np.float32)
+    py = np.random.uniform(0, HEIGHT, num_particles).astype(np.float32)
+    ph = np.random.uniform(0, 2 * np.pi, num_particles).astype(np.float32)
     return px, py, ph
 
 
@@ -107,9 +107,9 @@ def spawn_random(num_particles):
 
 def combined_grid(species_idx, grids, attraction):
     weights = attraction[species_idx]
-    result = np.zeros_like(grids[0])
+    result = np.zeros_like(grids[0])  # already float32 from grid init
     for w, g in zip(weights, grids):
-        result += w * g
+        result += np.float32(w) * g
     return result
 
 
@@ -139,12 +139,12 @@ def sense_species(px, py, ph, mask, trail_map, cfg):
     R = sample(sensor_angle)
 
     # Default: no rotation
-    da = np.zeros_like(sph)
+    da = np.zeros_like(sph)  # float32 from sph
 
     # Center strongest → go straight (da stays 0)
     # Center weakest → random left or right
     both_stronger = (C < L) & (C < R)
-    random_sign = (np.random.randint(0, 2, size=spx.size) * 2 - 1).astype(np.float64)
+    random_sign = (np.random.randint(0, 2, size=spx.size) * 2 - 1).astype(np.float32)
     da = np.where(both_stronger, rotation_angle * random_sign, da)
 
     # Left weaker than right → turn right (but not if center is strongest or weakest)
@@ -169,17 +169,18 @@ def deposit_species(px, py, mask, grid, deposit_amount):
 
 def separable_box_blur(grid, radius):
     d = 2 * radius + 1
+    inv_d = np.float32(1.0 / d)
     h, w = grid.shape
 
     padded = np.pad(grid, ((0, 0), (radius, radius)), mode="wrap")
-    cs = np.zeros((h, padded.shape[1] + 1))
+    cs = np.zeros((h, padded.shape[1] + 1), dtype=np.float32)
     cs[:, 1:] = np.cumsum(padded, axis=1)
-    blurred = (cs[:, d:] - cs[:, :w]) / d
+    blurred = (cs[:, d:] - cs[:, :w]) * inv_d
 
     padded = np.pad(blurred, ((radius, radius), (0, 0)), mode="wrap")
-    cs = np.zeros((padded.shape[0] + 1, w))
+    cs = np.zeros((padded.shape[0] + 1, w), dtype=np.float32)
     cs[1:, :] = np.cumsum(padded, axis=0)
-    blurred = (cs[d:, :] - cs[:h, :]) / d
+    blurred = (cs[d:, :] - cs[:h, :]) * inv_d
 
     return blurred
 
@@ -195,21 +196,21 @@ def blur_and_decay(grid, radius, iterations, decay_factor):
 
 
 def render_image(grids, palette_colors, num_species):
-    rgb = np.zeros((HEIGHT, WIDTH, 3), dtype=np.float64)
+    rgb = np.zeros((HEIGHT, WIDTH, 3), dtype=np.float32)
 
     for s in range(num_species):
         grid = grids[s]
-        max_val = np.percentile(grid, PERCENTILE) * HEADROOM
+        max_val = np.float32(np.percentile(grid, PERCENTILE) * HEADROOM)
         if max_val < 1e-10:
-            max_val = 1.0
+            max_val = np.float32(1.0)
 
         normalized = np.clip(grid / max_val, 0.0, 1.0)
-        corrected = normalized**GAMMA
+        corrected = normalized ** np.float32(GAMMA)
 
         color = palette_colors[s % len(palette_colors)]
-        rgb[:, :, 0] += corrected * color[0]
-        rgb[:, :, 1] += corrected * color[1]
-        rgb[:, :, 2] += corrected * color[2]
+        rgb[:, :, 0] += corrected * np.float32(color[0])
+        rgb[:, :, 1] += corrected * np.float32(color[1])
+        rgb[:, :, 2] += corrected * np.float32(color[2])
 
     rgb_u8 = np.clip(rgb, 0, 255).astype(np.uint8)
     return Image.fromarray(rgb_u8, "RGB")
@@ -301,7 +302,10 @@ def main():
     masks = [species == s for s in range(num_species)]
 
     # Initialize grids with random noise
-    grids = [np.random.random((HEIGHT, WIDTH)) * 0.1 for _ in range(num_species)]
+    grids = [
+        np.random.random((HEIGHT, WIDTH)).astype(np.float32) * np.float32(0.1)
+        for _ in range(num_species)
+    ]
 
     # Run simulation
     t_start = time.time()
