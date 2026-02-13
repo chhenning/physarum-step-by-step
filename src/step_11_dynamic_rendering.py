@@ -26,11 +26,11 @@ WIDTH = 320
 HEIGHT = 240
 
 # --- Number of particles ---
-NUM_PARTICLES = 2000
+NUM_PARTICLES = 4000
 
 # --- Trail parameters ---
 DEPOSIT_AMOUNT = 5.0
-DECAY_FACTOR = 0.95
+DECAY_FACTOR = 0.98
 
 # --- Blur parameters ---
 BLUR_RADIUS = 1
@@ -210,7 +210,7 @@ def draw(screen, trail_map):
 
     # Normalize to [0, 1] and apply gamma correction
     normalized = np.clip(trail_map / max_val, 0.0, 1.0)
-    corrected = normalized ** GAMMA
+    corrected = normalized**GAMMA
 
     # Map to greenish RGB
     r = (corrected * 140).astype(np.uint8)
@@ -254,16 +254,16 @@ def main():
         sense(px, py, ph, trail_map)
         move(px, py, ph)
         deposit(px, py, trail_map)
-        trail_map = blur_and_decay(trail_map, BLUR_RADIUS, BLUR_ITERATIONS, DECAY_FACTOR)
+        trail_map = blur_and_decay(
+            trail_map, BLUR_RADIUS, BLUR_ITERATIONS, DECAY_FACTOR
+        )
 
         draw(screen, trail_map)
         pygame.display.flip()
 
         elapsed = (time.time() - start) * 1000
         pygame.display.set_caption(
-            f"Physarum — {mode}  |  tick={tick}  "
-            f"gamma={GAMMA}  "
-            f"{elapsed:.0f}ms"
+            f"Physarum — {mode}  |  tick={tick}  " f"gamma={GAMMA}  " f"{elapsed:.0f}ms"
         )
 
         clock.tick(FPS)
