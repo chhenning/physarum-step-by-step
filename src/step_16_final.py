@@ -1,19 +1,15 @@
-"""Step 15: Weighted sensing — probabilistic steering for smoother, more
-organic network topology.
+"""Step 16: Random grid initialization and final polish — the capstone demo.
 
-Builds on Step 14 (color palettes). Changes:
-  - sense_species() uses weighted random selection instead of hard conditionals
-  - Weights are derived from differences between sensor readings:
-      w_straight = |left - right|   (go straight when sides are balanced)
-      w_left     = |front - right|  (turn left when front ≈ right)
-      w_right    = |front - left|   (turn right when front ≈ left)
-  - When signals are similar, particles explore more freely
-  - When one signal dominates, particles still follow it reliably
-  - Networks appear smoother and more organic compared to step 14
+Builds on Step 15 (weighted sensing). Changes:
+  - Trail grids start with random noise so particles react from frame 1
+  - generate_random_configs(n) creates randomized species parameters
+  - generate_random_attraction(n) creates randomized attraction matrices
+  - Third CLI argument selects num_species (1-4)
+  - R key regenerates random configs and restarts the simulation
 
-    python src/step_15_weighted_sensing.py [mode] [palette]
-    python src/step_15_weighted_sensing.py random neon
-    python src/step_15_weighted_sensing.py clusters fire
+    python src/step_16_final.py [mode] [palette] [num_species]
+    python src/step_16_final.py ring fire 2
+    python src/step_16_final.py random random 4
 """
 
 import math
@@ -61,7 +57,7 @@ PALETTE_NAMES = list(PALETTES.keys())
 
 NUM_PARTICLES_PER_SPECIES = 200
 
-SPECIES_CONFIGS = [
+DEFAULT_SPECIES_CONFIGS = [
     {
         "sensor_angle": math.radians(30),
         "sensor_distance": 9.0,
@@ -88,11 +84,7 @@ SPECIES_CONFIGS = [
     },
 ]
 
-NUM_SPECIES = len(SPECIES_CONFIGS)
-NUM_PARTICLES = NUM_PARTICLES_PER_SPECIES * NUM_SPECIES
-
-# Attraction table: self-attraction on diagonal, repulsion off-diagonal.
-ATTRACTION = np.array(
+DEFAULT_ATTRACTION = np.array(
     [
         [+1.0, -0.5, -0.5],
         [-0.5, +1.0, -0.5],
@@ -101,47 +93,75 @@ ATTRACTION = np.array(
 )
 
 
+# --- Random configuration generation ---
+
+
+def generate_random_configs(n):
+    configs = []
+    for _ in range(n):
+        configs.append(
+            {
+                "sensor_angle": math.radians(np.random.uniform(15, 45)),
+                "sensor_distance": np.random.uniform(5.0, 15.0),
+                "rotation_angle": math.radians(np.random.uniform(10, 35)),
+                "step_distance": np.random.uniform(0.6, 1.5),
+                "deposit": np.random.uniform(0.8, 1.5),
+                "decay": np.random.uniform(0.85, 0.95),
+            }
+        )
+    return configs
+
+
+def generate_random_attraction(n):
+    matrix = np.ones((n, n))
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                matrix[i, j] = np.random.uniform(-0.8, -0.3)
+    return matrix
+
+
 # --- Spawn modes ---
 
 
-def spawn_random():
-    px = np.random.uniform(0, WIDTH, NUM_PARTICLES)
-    py = np.random.uniform(0, HEIGHT, NUM_PARTICLES)
-    ph = np.random.uniform(0, 2 * np.pi, NUM_PARTICLES)
-    species = np.repeat(np.arange(NUM_SPECIES), NUM_PARTICLES_PER_SPECIES)
+def spawn_random(num_particles, num_species):
+    px = np.random.uniform(0, WIDTH, num_particles)
+    py = np.random.uniform(0, HEIGHT, num_particles)
+    ph = np.random.uniform(0, 2 * np.pi, num_particles)
+    species = np.repeat(np.arange(num_species), NUM_PARTICLES_PER_SPECIES)
     return px, py, ph, species
 
 
-def spawn_ring():
+def spawn_ring(num_particles, num_species):
     cx, cy = WIDTH / 2, HEIGHT / 2
     radius = min(WIDTH, HEIGHT) * 0.35
-    angles = np.linspace(0, 2 * np.pi, NUM_PARTICLES, endpoint=False)
+    angles = np.linspace(0, 2 * np.pi, num_particles, endpoint=False)
     px = cx + np.cos(angles) * radius
     py = cy + np.sin(angles) * radius
     ph = angles + np.pi
-    species = np.repeat(np.arange(NUM_SPECIES), NUM_PARTICLES_PER_SPECIES)
+    species = np.repeat(np.arange(num_species), NUM_PARTICLES_PER_SPECIES)
     return px, py, ph, species
 
 
-def spawn_center():
+def spawn_center(num_particles, num_species):
     cx, cy = WIDTH / 2, HEIGHT / 2
-    px = np.random.normal(cx, 2, NUM_PARTICLES)
-    py = np.random.normal(cy, 2, NUM_PARTICLES)
-    ph = np.random.uniform(0, 2 * np.pi, NUM_PARTICLES)
-    species = np.repeat(np.arange(NUM_SPECIES), NUM_PARTICLES_PER_SPECIES)
+    px = np.random.normal(cx, 2, num_particles)
+    py = np.random.normal(cy, 2, num_particles)
+    ph = np.random.uniform(0, 2 * np.pi, num_particles)
+    species = np.repeat(np.arange(num_species), NUM_PARTICLES_PER_SPECIES)
     return px, py, ph, species
 
 
-def spawn_clusters():
-    positions_x = np.linspace(0.2, 0.8, NUM_SPECIES) * WIDTH
+def spawn_clusters(num_particles, num_species):
+    positions_x = np.linspace(0.2, 0.8, num_species) * WIDTH
     px_parts, py_parts = [], []
     for cx in positions_x:
         px_parts.append(np.random.normal(cx, 3, NUM_PARTICLES_PER_SPECIES))
         py_parts.append(np.random.normal(HEIGHT / 2, 3, NUM_PARTICLES_PER_SPECIES))
     px = np.concatenate(px_parts)
     py = np.concatenate(py_parts)
-    ph = np.random.uniform(0, 2 * np.pi, NUM_PARTICLES)
-    species = np.repeat(np.arange(NUM_SPECIES), NUM_PARTICLES_PER_SPECIES)
+    ph = np.random.uniform(0, 2 * np.pi, num_particles)
+    species = np.repeat(np.arange(num_species), NUM_PARTICLES_PER_SPECIES)
     return px, py, ph, species
 
 
@@ -156,8 +176,8 @@ MODES = {
 # --- Simulation functions ---
 
 
-def combined_grid(species_idx, grids):
-    weights = ATTRACTION[species_idx]
+def combined_grid(species_idx, grids, attraction):
+    weights = attraction[species_idx]
     result = np.zeros_like(grids[0])
     for w, g in zip(weights, grids):
         result += w * g
@@ -165,13 +185,6 @@ def combined_grid(species_idx, grids):
 
 
 def sense_species(px, py, ph, mask, trail_map, cfg):
-    """Weighted probabilistic steering (NEW in this step).
-
-    Instead of always turning toward the strongest sensor, compute weights
-    from the differences between sensor values and make a weighted random
-    choice.  When signals are similar the particle explores freely; when
-    one signal dominates it almost certainly turns that way.
-    """
     spx = px[mask]
     spy = py[mask]
     sph = ph[mask]
@@ -189,21 +202,13 @@ def sense_species(px, py, ph, mask, trail_map, cfg):
     val_front = sample(0)
     val_right = sample(sensor_angle)
 
-    # Compute weights from sensor differences.
-    # w_straight is large when left ≈ right (sides balanced → go straight)
-    # w_left is large when front ≈ right (front and right similar → turn left)
-    # w_right is large when front ≈ left (front and left similar → turn right)
     w_straight = np.abs(val_left - val_right)
     w_left = np.abs(val_front - val_right)
     w_right = np.abs(val_front - val_left)
 
-    # Add a small epsilon to avoid division by zero when all sensors read
-    # the same value (all weights would be zero).  This gives uniform
-    # probability in the fully-ambiguous case.
     epsilon = 1e-10
     total = w_straight + w_left + w_right + epsilon
 
-    # Cumulative thresholds for weighted random selection.
     threshold_straight = w_straight / total
     threshold_left = (w_straight + w_left) / total
 
@@ -257,10 +262,10 @@ def blur_and_decay(grid, radius, iterations, decay_factor):
 # --- Rendering ---
 
 
-def draw(screen, grids, palette_colors):
+def draw(screen, grids, palette_colors, num_species):
     rgb = np.zeros((HEIGHT, WIDTH, 3), dtype=np.float64)
 
-    for s in range(NUM_SPECIES):
+    for s in range(num_species):
         grid = grids[s]
         max_val = np.percentile(grid, PERCENTILE) * HEADROOM
         if max_val < 1e-10:
@@ -269,7 +274,7 @@ def draw(screen, grids, palette_colors):
         normalized = np.clip(grid / max_val, 0.0, 1.0)
         corrected = normalized**GAMMA
 
-        color = palette_colors[s]
+        color = palette_colors[s % len(palette_colors)]
         rgb[:, :, 0] += corrected * color[0]
         rgb[:, :, 1] += corrected * color[1]
         rgb[:, :, 2] += corrected * color[2]
@@ -278,6 +283,28 @@ def draw(screen, grids, palette_colors):
 
     scaled = np.repeat(np.repeat(rgb_u8, PIXEL_SCALE, axis=0), PIXEL_SCALE, axis=1)
     pygame.surfarray.blit_array(screen, scaled.transpose(1, 0, 2))
+
+
+# --- Initialization helper ---
+
+
+def init_simulation(mode, num_species, use_random_configs):
+    num_particles = NUM_PARTICLES_PER_SPECIES * num_species
+
+    if use_random_configs or num_species != 3:
+        configs = generate_random_configs(num_species)
+        attraction = generate_random_attraction(num_species)
+    else:
+        configs = DEFAULT_SPECIES_CONFIGS
+        attraction = DEFAULT_ATTRACTION
+
+    px, py, ph, species = MODES[mode](num_particles, num_species)
+    grids = [
+        np.random.random((HEIGHT, WIDTH)) for _ in range(num_species)
+    ]
+    masks = [species == s for s in range(num_species)]
+
+    return px, py, ph, species, grids, masks, configs, attraction
 
 
 # --- Main ---
@@ -289,20 +316,27 @@ def main():
         print(f"Unknown mode '{mode}'. Choose from: {', '.join(MODES)}")
         sys.exit(1)
 
-    palette_name = sys.argv[2] if len(sys.argv) > 2 else "neon"
-    if palette_name not in PALETTES:
-        print(f"Unknown palette '{palette_name}'. Choose from: {', '.join(PALETTES)}")
+    palette_arg = sys.argv[2] if len(sys.argv) > 2 else "random"
+    if palette_arg == "random":
+        palette_idx = np.random.randint(len(PALETTE_NAMES))
+    elif palette_arg in PALETTES:
+        palette_idx = PALETTE_NAMES.index(palette_arg)
+    else:
+        print(f"Unknown palette '{palette_arg}'. Choose from: {', '.join(PALETTES)}, random")
         sys.exit(1)
 
-    palette_idx = PALETTE_NAMES.index(palette_name)
+    num_species = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    num_species = max(1, min(4, num_species))
+
+    use_random_configs = num_species != 3
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
 
-    px, py, ph, species = MODES[mode]()
-    grids = [np.zeros((HEIGHT, WIDTH), dtype=np.float64) for _ in range(NUM_SPECIES)]
-    masks = [species == s for s in range(NUM_SPECIES)]
+    px, py, ph, species, grids, masks, configs, attraction = init_simulation(
+        mode, num_species, use_random_configs
+    )
 
     tick = 0
     running = True
@@ -315,32 +349,37 @@ def main():
                     running = False
                 elif event.key == pygame.K_p:
                     palette_idx = (palette_idx + 1) % len(PALETTE_NAMES)
+                elif event.key == pygame.K_r:
+                    px, py, ph, species, grids, masks, configs, attraction = (
+                        init_simulation(mode, num_species, True)
+                    )
+                    tick = 0
 
         start = time.time()
 
-        for s, cfg in enumerate(SPECIES_CONFIGS):
-            cg = combined_grid(s, grids)
+        for s, cfg in enumerate(configs):
+            cg = combined_grid(s, grids, attraction)
             sense_species(px, py, ph, masks[s], cg, cfg)
 
-        for s, cfg in enumerate(SPECIES_CONFIGS):
+        for s, cfg in enumerate(configs):
             move_species(px, py, ph, masks[s], cfg["step_distance"])
             deposit_species(px, py, masks[s], grids[s], cfg["deposit"])
 
-        for s, cfg in enumerate(SPECIES_CONFIGS):
+        for s, cfg in enumerate(configs):
             grids[s] = blur_and_decay(
                 grids[s], BLUR_RADIUS, BLUR_ITERATIONS, cfg["decay"]
             )
 
         current_palette = PALETTES[PALETTE_NAMES[palette_idx]]
-        draw(screen, grids, current_palette)
+        draw(screen, grids, current_palette, num_species)
         pygame.display.flip()
 
         elapsed = (time.time() - start) * 1000
         pygame.display.set_caption(
             f"Physarum — {mode}  |  tick={tick}  "
             f"palette={PALETTE_NAMES[palette_idx]}  "
-            f"species={NUM_SPECIES}  "
-            f"{elapsed:.0f}ms  [P=next palette]"
+            f"species={num_species}  "
+            f"{elapsed:.0f}ms  [P=palette R=regenerate]"
         )
 
         clock.tick(FPS)
