@@ -1,19 +1,19 @@
-"""Step 7: Pygame visualization — render the trail map as colored pixels.
+"""Step 8: NumPy-accelerated Physarum with pygame visualization.
 
-Same simulation as Step 6 but replaces ASCII output with a pygame window.
-Each trail cell maps to a pixel (scaled up) with brightness based on intensity.
+Replaces the pure-Python simulation from Step 7 with vectorized NumPy arrays
+for particle state and trail computation. Uses scipy's uniform_filter for
+diffusion. Rendering is fully vectorized via surfarray.
 
-    python src/step_07_pygame.py [random|ring|center|clusters]
+    python src/step_08_pygame_w_numpy.py [random|ring|center|clusters]
 """
 
 import math
-import random
 import sys
 import time
 
 import numpy as np
-
 import pygame
+from scipy.ndimage import uniform_filter
 
 # --- Grid dimensions ---
 WIDTH = 320
@@ -39,63 +39,49 @@ FPS = 60
 
 
 # --- Spawn modes ---
-def spawn_random():
-    particles = [
-        {
-            "x": random.uniform(0, WIDTH),
-            "y": random.uniform(0, HEIGHT),
-            "heading": random.uniform(0, 2 * math.pi),
-        }
-        for _ in range(NUM_PARTICLES)
-    ]
 
-    return particles
+
+def spawn_random():
+    """Scatter all particles uniformly across the grid with random headings."""
+    px = np.random.uniform(0, WIDTH, NUM_PARTICLES)
+    py = np.random.uniform(0, HEIGHT, NUM_PARTICLES)
+    ph = np.random.uniform(0, 2 * np.pi, NUM_PARTICLES)
+    return px, py, ph
 
 
 def spawn_ring():
+    """Place particles in a ring around the center, all facing inward."""
     cx, cy = WIDTH / 2, HEIGHT / 2
     radius = min(WIDTH, HEIGHT) * 0.35
-    particles = []
-    for i in range(NUM_PARTICLES):
-        angle = 2 * math.pi * i / NUM_PARTICLES
-        x = cx + math.cos(angle) * radius
-        y = cy + math.sin(angle) * radius
-        heading = angle + math.pi
-        particles.append({"x": x, "y": y, "heading": heading})
-    return particles
+    angles = np.linspace(0, 2 * np.pi, NUM_PARTICLES, endpoint=False)
+    px = cx + np.cos(angles) * radius
+    py = cy + np.sin(angles) * radius
+    ph = angles + np.pi
+    return px, py, ph
 
 
 def spawn_center():
+    """Cluster all particles tightly at the grid center with random headings."""
     cx, cy = WIDTH / 2, HEIGHT / 2
-    return [
-        {
-            "x": cx + random.gauss(0, 2),
-            "y": cy + random.gauss(0, 2),
-            "heading": random.uniform(0, 2 * math.pi),
-        }
-        for _ in range(NUM_PARTICLES)
-    ]
+    px = np.random.normal(cx, 2, NUM_PARTICLES)
+    py = np.random.normal(cy, 2, NUM_PARTICLES)
+    ph = np.random.uniform(0, 2 * np.pi, NUM_PARTICLES)
+    return px, py, ph
 
 
 def spawn_clusters():
-    particles = []
-    for _ in range(NUM_PARTICLES // 2):
-        particles.append(
-            {
-                "x": WIDTH * 0.25 + random.gauss(0, 2),
-                "y": HEIGHT / 2 + random.gauss(0, 2),
-                "heading": random.uniform(0, 2 * math.pi),
-            }
-        )
-    for _ in range(NUM_PARTICLES - NUM_PARTICLES // 2):
-        particles.append(
-            {
-                "x": WIDTH * 0.75 + random.gauss(0, 2),
-                "y": HEIGHT / 2 + random.gauss(0, 2),
-                "heading": random.uniform(0, 2 * math.pi),
-            }
-        )
-    return particles
+    """Split particles into two tight clusters at 25% and 75% of grid width."""
+    half = NUM_PARTICLES // 2
+    rest = NUM_PARTICLES - half
+    px = np.concatenate(
+        [
+            np.random.normal(WIDTH * 0.25, 2, half),
+            np.random.normal(WIDTH * 0.75, 2, rest),
+        ]
+    )
+    py = np.random.normal(HEIGHT / 2, 2, NUM_PARTICLES)
+    ph = np.random.uniform(0, 2 * np.pi, NUM_PARTICLES)
+    return px, py, ph
 
 
 MODES = {
@@ -110,87 +96,113 @@ MODES = {
 
 
 def create_trail_map():
+    """Create a zero-initialized trail map of shape (HEIGHT, WIDTH)."""
     return np.zeros((HEIGHT, WIDTH), dtype=np.float64)
 
 
-def sense(p, trail_map):
-    h = p["heading"]
-    x, y = p["x"], p["y"]
+def sense(px, py, ph, trail_map):
+    """Sample three sensors per particle and rotate toward the strongest trail.
 
-    def sample(angle):
-        sx = int(x + math.cos(angle) * SENSOR_DISTANCE) % WIDTH
-        sy = int(y + math.sin(angle) * SENSOR_DISTANCE) % HEIGHT
-        return trail_map[sy][sx]
+    Each particle probes the trail map at left, front, and right sensor
+    positions. The heading array ph is updated in-place based on which
+    sensor reads the highest value. Ties are broken randomly.
+    """
 
-    val_left = sample(h - SENSOR_ANGLE)
-    val_front = sample(h)
-    val_right = sample(h + SENSOR_ANGLE)
+    def sample(angle_offset):
+        """Return trail values at sensor positions offset from each particle's heading."""
+        angles = ph + angle_offset
+        sx = (px + np.cos(angles) * SENSOR_DISTANCE).astype(int) % WIDTH
+        sy = (py + np.sin(angles) * SENSOR_DISTANCE).astype(int) % HEIGHT
+        return trail_map[sy, sx]
 
-    if val_front >= val_left and val_front >= val_right:
-        pass
-    elif val_left > val_right:
-        p["heading"] -= ROTATION_ANGLE
-    elif val_right > val_left:
-        p["heading"] += ROTATION_ANGLE
-    else:
-        p["heading"] += random.choice([-1, 1]) * ROTATION_ANGLE
+    val_left = sample(-SENSOR_ANGLE)
+    val_front = sample(0)
+    val_right = sample(SENSOR_ANGLE)
+
+    random_turns = np.where(
+        np.random.randint(0, 2, len(px)) == 0,
+        -ROTATION_ANGLE,
+        ROTATION_ANGLE,
+    )
+
+    front_is_best = (val_front >= val_left) & (val_front >= val_right)
+    left_is_better = val_left > val_right
+    right_is_better = val_right > val_left
+
+    rotation = np.where(
+        front_is_best,
+        0.0,
+        np.where(
+            left_is_better,
+            -ROTATION_ANGLE,
+            np.where(
+                right_is_better,
+                ROTATION_ANGLE,
+                random_turns,
+            ),
+        ),
+    )
+
+    ph[:] = ph + rotation
 
 
-def move(p):
-    p["x"] = (p["x"] + math.cos(p["heading"])) % WIDTH
-    p["y"] = (p["y"] + math.sin(p["heading"])) % HEIGHT
+def move(px, py, ph):
+    """Advance each particle one step along its heading (toroidal wrapping)."""
+    px[:] = (px + np.cos(ph)) % WIDTH
+    py[:] = (py + np.sin(ph)) % HEIGHT
 
 
-def deposit(particles, trail_map):
-    for p in particles:
-        gx, gy = int(p["x"]) % WIDTH, int(p["y"]) % HEIGHT
-        trail_map[gy][gx] += DEPOSIT_AMOUNT
+def deposit(px, py, trail_map):
+    """Add pheromone to the trail map at each particle's grid cell.
+
+    Uses np.add.at for unbuffered accumulation so that multiple particles
+    in the same cell each contribute their deposit.
+    """
+    gx = px.astype(int) % WIDTH
+    gy = py.astype(int) % HEIGHT
+    np.add.at(trail_map, (gy, gx), DEPOSIT_AMOUNT)
 
 
 def diffuse(trail_map):
-    new_map = create_trail_map()
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            total = 0.0
-            for dy in (-1, 0, 1):
-                for dx in (-1, 0, 1):
-                    nx = (x + dx) % WIDTH
-                    ny = (y + dy) % HEIGHT
-                    total += trail_map[ny][nx]
-            new_map[y][x] = total / 9.0
-    return new_map
+    """Apply a 3x3 mean filter with toroidal (wrap-around) boundaries.
+
+    Returns a new array; the original is not modified.
+    """
+    return uniform_filter(trail_map, size=3, mode="wrap")
 
 
 def decay(trail_map):
+    """Reduce all trail values by DECAY_FACTOR (in-place multiplication)."""
     trail_map *= DECAY_FACTOR
 
 
 # --- Rendering ---
 
 
-def trail_to_color(value):
-    """Map trail intensity to a greenish-white color."""
-    brightness = min(value / 10.0, 1.0)
-    r = int(brightness * 140)
-    g = int(brightness * 255)
-    b = int(brightness * 100)
-    return (r, g, b)
-
-
 def draw(screen, trail_map):
-    """Render the trail map onto the pygame surface."""
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            color = trail_to_color(trail_map[y][x])
-            rect = (x * PIXEL_SCALE, y * PIXEL_SCALE, PIXEL_SCALE, PIXEL_SCALE)
-            # Draw a filled rectangle (one grid cell) with the given color
-            screen.fill(color, rect)
+    """Render the trail map onto the pygame surface as scaled RGB pixels.
+
+    Maps trail intensity to a greenish color, scales up by PIXEL_SCALE,
+    and blits directly via surfarray (no per-pixel Python loop).
+    """
+    brightness = np.clip(trail_map / 10.0, 0.0, 1.0)
+
+    r = (brightness * 140).astype(np.uint8)
+    g = (brightness * 255).astype(np.uint8)
+    b = (brightness * 100).astype(np.uint8)
+    rgb = np.stack([r, g, b], axis=-1)
+
+    scaled = np.repeat(np.repeat(rgb, PIXEL_SCALE, axis=0), PIXEL_SCALE, axis=1)
+
+    # surfarray expects (width, height, 3) so transpose the spatial axes
+    pygame.surfarray.blit_array(screen, scaled.transpose(1, 0, 2))
 
 
 # --- Main ---
 
 
 def main():
+    """Run the simulation loop: sense, move, deposit, diffuse, decay, render."""
     mode = sys.argv[1] if len(sys.argv) > 1 else "random"
     if mode not in MODES:
         print(f"Unknown mode '{mode}'. Choose from: {', '.join(MODES)}")
@@ -205,7 +217,7 @@ def main():
     # Create a clock to control the frame rate
     clock = pygame.time.Clock()
 
-    particles = MODES[mode]()
+    px, py, ph = MODES[mode]()
     trail_map = create_trail_map()
     tick = 0
 
@@ -224,22 +236,17 @@ def main():
 
         start = time.time()
 
-        for p in particles:
-            sense(p, trail_map)
-        for p in particles:
-            move(p)
-        deposit(particles, trail_map)
+        sense(px, py, ph, trail_map)
+        move(px, py, ph)
+        deposit(px, py, trail_map)
         trail_map = diffuse(trail_map)
         decay(trail_map)
 
-        # Clear the entire screen to black before drawing the new frame
-        screen.fill((0, 0, 0))
         draw(screen, trail_map)
         # Push the newly drawn frame to the screen (swap front/back buffers)
         pygame.display.flip()
 
         elapsed = (time.time() - start) * 1000
-        # Update the title bar with live stats
         pygame.display.set_caption(
             f"Physarum — {mode}  |  tick={tick}  particles={NUM_PARTICLES}  {elapsed:.0f}ms"
         )

@@ -78,3 +78,43 @@ for p in particles:
 ```
 
 The loop naturally handles duplicates because each iteration mutates the same cell. `np.add.at` preserves that behavior in vectorized form.
+
+---
+
+## `px[:]` — In-Place Assignment vs. Rebinding
+
+**From:** Exercise 3 (Move)
+
+### The difference
+
+```python
+# Creates a NEW array, rebinds the name `px` to it
+px = (px + np.cos(ph)) % WIDTH
+
+# Writes into the EXISTING array's memory
+px[:] = (px + np.cos(ph)) % WIDTH
+```
+
+### Why it matters
+
+If another variable references the same array, the two behave differently:
+
+```python
+px = np.array([1.0, 2.0, 3.0])
+ref = px  # ref points to the same array
+
+px = px + 10       # px is now a NEW array; ref still holds [1, 2, 3]
+print(ref)         # [1. 2. 3.]
+
+px = np.array([1.0, 2.0, 3.0])
+ref = px
+
+px[:] = px + 10    # mutates the original array in-place
+print(ref)         # [11. 12. 13.]  — ref sees the change
+```
+
+In the simulation, `px`, `py`, `ph` are passed into functions like `move()` and `sense()`. Using `px[:] =` ensures the caller's arrays get updated. If you used `px =` inside the function, you'd just rebind the local variable and the caller would never see the change.
+
+### `[:]` is slice syntax
+
+`px[:]` means "all elements" — it's a slice from start to end. NumPy interprets assignment to a slice as "write these values into the existing buffer."
