@@ -28,9 +28,11 @@ Uses **uv** for dependency management. Python >=3.13 required. Single dependency
 4. `step_04` — Diffusion via 3x3 mean filter (double-buffered)
 5. `step_05` — Sensors and chemotaxis (sense → rotate → move feedback loop)
 6. `step_06` — Emergence with configurable spawn modes
-7. Parameter exploration (conceptual — see `learning_path.md`)
+7. `step_07` — Parameter exploration (named presets demonstrating parameter effects)
 8. `step_08` — Pygame visualization (replaces ASCII with graphical rendering)
 9. `step_09` — NumPy vectorization (arrays instead of dicts/lists, scipy diffusion)
+10. `step_10` — Separable box blur (cumsum sliding window, configurable radius)
+11. `step_11` — Dynamic range rendering (percentile normalization, gamma correction)
 
 **Each step file is self-contained** with this structure: constants → helper functions → main loop → rendering.
 

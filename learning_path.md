@@ -191,25 +191,7 @@ Try these experiments:
 
 ---
 
-## Step 12: Performance Tricks
-
-**Goal:** Apply low-level optimizations inspired by the Go implementation.
-
-- **Trig lookup tables** (pure Python path): Pre-compute 65,536 entries for sin and cos. Convert radians to a table index with a multiply and bitwise AND:
-  ```python
-  sin_table[int(angle * TRIG_FACTOR + TABLE_SIZE) & TABLE_MASK]
-  ```
-  Adding `TABLE_SIZE` before masking handles negative angles without branching. With NumPy, `np.sin(headings)` on the full array is already vectorized and faster than any Python-level LUT.
-
-- **Power-of-2 grid dimensions**: Use dimensions like 512×256 instead of 320×240. Toroidal wrapping becomes a bitwise AND (`& (SIZE - 1)`) instead of modulo (`% SIZE`). One CPU cycle instead of 20–40. With NumPy integer arrays this still helps.
-
-- **Double-buffered grids (buffer reuse)**: Pre-allocate two trail map arrays at startup and swap references each frame (`trail_map, temp_map = temp_map, trail_map`). Eliminates all per-frame memory allocation and GC pressure.
-
-**Key concepts:** Lookup tables, bitwise tricks, zero-allocation loops, power-of-2 optimization.
-
----
-
-## Step 13: Variable Step Distance
+## Step 12: Variable Step Distance
 
 **Goal:** Make step distance a tunable parameter that changes network character.
 
@@ -228,7 +210,7 @@ Try these experiments:
 
 ---
 
-## Step 14: Multi-Species Simulation
+## Step 13: Multi-Species Simulation
 
 **Goal:** Introduce multiple species with independent behavior and inter-species interactions.
 
@@ -255,7 +237,7 @@ Try these experiments:
 
 ---
 
-## Step 15: Color Palettes and Additive Blending
+## Step 14: Color Palettes and Additive Blending
 
 **Goal:** Render multi-species simulations with color — each species gets its own color, and overlapping trails blend.
 
@@ -285,7 +267,7 @@ Try these experiments:
 
 ---
 
-## Step 16: Weighted Sensing
+## Step 15: Weighted Sensing
 
 **Goal:** Replace hard conditional steering with probabilistic direction selection for smoother, more organic networks.
 
@@ -314,7 +296,7 @@ Try these experiments:
 
 ---
 
-## Step 17: Random Grid Initialization and Final Polish
+## Step 16: Random Grid Initialization and Final Polish
 
 **Goal:** Bootstrap pattern formation and combine all optimizations into a polished final demo.
 
@@ -329,7 +311,6 @@ Try these experiments:
   - Percentile normalization and gamma correction
   - Weighted probabilistic sensing
   - Variable step distances per species
-  - Power-of-2 grid dimensions and buffer reuse
 - Add command-line options for selecting palette, number of species, and spawn mode
 - Generate random species configurations (with randomized attraction tables) for endlessly varied results
 
