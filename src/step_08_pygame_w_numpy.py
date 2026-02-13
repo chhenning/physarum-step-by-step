@@ -11,6 +11,8 @@ import random
 import sys
 import time
 
+import numpy as np
+
 import pygame
 
 # --- Grid dimensions ---
@@ -22,7 +24,7 @@ NUM_PARTICLES = 2000
 
 # --- Trail parameters ---
 DEPOSIT_AMOUNT = 5.0
-DECAY_FACTOR = 0.99
+DECAY_FACTOR = 0.95
 
 # --- Sensor parameters ---
 SENSOR_ANGLE = math.radians(45)
@@ -37,10 +39,8 @@ FPS = 60
 
 
 # --- Spawn modes ---
-
-
 def spawn_random():
-    return [
+    particles = [
         {
             "x": random.uniform(0, WIDTH),
             "y": random.uniform(0, HEIGHT),
@@ -48,6 +48,8 @@ def spawn_random():
         }
         for _ in range(NUM_PARTICLES)
     ]
+
+    return particles
 
 
 def spawn_ring():
@@ -108,7 +110,7 @@ MODES = {
 
 
 def create_trail_map():
-    return [[0.0] * WIDTH for _ in range(HEIGHT)]
+    return np.zeros((HEIGHT, WIDTH), dtype=np.float64)
 
 
 def sense(p, trail_map):
@@ -160,9 +162,7 @@ def diffuse(trail_map):
 
 
 def decay(trail_map):
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            trail_map[y][x] *= DECAY_FACTOR
+    trail_map *= DECAY_FACTOR
 
 
 # --- Rendering ---
