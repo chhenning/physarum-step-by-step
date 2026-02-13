@@ -28,15 +28,23 @@ Uses **uv** for dependency management. Python >=3.13 required. Single dependency
 4. `step_04` — Diffusion via 3x3 mean filter (double-buffered)
 5. `step_05` — Sensors and chemotaxis (sense → rotate → move feedback loop)
 6. `step_06` — Emergence with configurable spawn modes
+7. Parameter exploration (conceptual — see `learning_path.md`)
+8. `step_08` — Pygame visualization (replaces ASCII with graphical rendering)
+9. `step_09` — NumPy vectorization (arrays instead of dicts/lists, scipy diffusion)
 
-**Each step file is self-contained** with this structure: constants → helper functions → main loop → ASCII rendering.
+**Each step file is self-contained** with this structure: constants → helper functions → main loop → rendering.
 
 **Core algorithm (steps 5-6):** sense 3 directions → rotate toward strongest trail → move forward → deposit pheromone → diffuse → decay → render.
 
-**Data structures:**
+**Data structures (steps 1-8):**
 - Particles: dicts with `x`, `y`, `heading` (radians)
 - Trail map: list-of-lists indexed as `trail_map[y][x]`
 - Toroidal wrapping via modulo on all positions
+
+**Data structures (step 9+):**
+- Particles: NumPy arrays `x`, `y`, `heading` (each shape `(N,)`)
+- Trail map: `np.zeros((HEIGHT, WIDTH))`
+- Diffusion via `scipy.ndimage.uniform_filter`
 
 ## Conventions
 

@@ -1,9 +1,9 @@
-"""Step 7: Pygame visualization — render the trail map as colored pixels.
+"""Step 8: Pygame visualization — render the trail map as colored pixels.
 
 Same simulation as Step 6 but replaces ASCII output with a pygame window.
 Each trail cell maps to a pixel (scaled up) with brightness based on intensity.
 
-    python src/step_07_pygame.py [random|ring|center|clusters]
+    python src/step_08_pygame.py [random|ring|center|clusters]
 """
 
 import math

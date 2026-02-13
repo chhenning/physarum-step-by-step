@@ -1,10 +1,10 @@
-"""Step 8: NumPy-accelerated Physarum with pygame visualization.
+"""Step 9: NumPy-accelerated Physarum with pygame visualization.
 
-Replaces the pure-Python simulation from Step 7 with vectorized NumPy arrays
+Replaces the pure-Python simulation from Step 8 with vectorized NumPy arrays
 for particle state and trail computation. Uses scipy's uniform_filter for
 diffusion. Rendering is fully vectorized via surfarray.
 
-    python src/step_08_pygame_w_numpy.py [random|ring|center|clusters]
+    python src/step_09_numpy_vectorization.py [random|ring|center|clusters]
 """
 
 import math

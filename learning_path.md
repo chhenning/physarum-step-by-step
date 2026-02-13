@@ -124,17 +124,216 @@ Try these experiments:
 
 ---
 
-## Future Enhancements (after the basics work)
+## Step 8: Pygame Visualization
 
-Once the text version is working and you understand the dynamics:
+**Goal:** Move from ASCII terminal output to real-time graphical rendering with pygame.
 
-1. **Visualization** — Use `pygame`, `matplotlib` animation, or `PIL` to render as images
-2. **Performance** — Use `numpy` for the trail map operations (diffusion, decay)
-3. **GPU** — Port to compute shaders (GLSL) or use `cupy` for massive particle counts
-4. **Contagion** — Add Sage Jenson's infection mechanic (particles carry state that spreads)
-5. **Color** — Map trail intensity to color gradients
-6. **Food sources** — Place attractors on the map that emit their own trails
-7. **Interactive** — Click to place food or spawn particles
+- Replace terminal printing with a pygame window
+- Create a pixel surface where each grid cell maps to a `PIXEL_SCALE × PIXEL_SCALE` block
+- Map trail intensity to brightness: `min(value / 10.0, 1.0)` → green-tinted color
+- Handle pygame events (quit, keyboard) in the main loop
+- Run at a target framerate with `pygame.time.Clock`
+
+**Key concepts:** Pygame surface rendering, pixel scaling, event loop, framerate control.
+
+---
+
+## Step 9: NumPy Vectorization
+
+**Goal:** Replace Python loops and dicts with NumPy arrays for a massive speedup.
+
+- Store particle data as NumPy arrays: `x`, `y`, `heading` (each of shape `(N,)`)
+- Replace the nested-list trail map with a 2D NumPy array: `np.zeros((HEIGHT, WIDTH))`
+- Vectorize the move step: `x = (x + np.cos(heading) * step) % WIDTH` — operates on ALL particles at once
+- Vectorize deposit: use `np.add.at(trail_map, (y_int, x_int), deposit_amount)` to handle duplicate positions correctly
+- Vectorize sensing: compute all three sensor positions for all particles in parallel, sample the trail map with integer indexing
+- Replace the 3x3 diffusion loop with `scipy.ndimage.uniform_filter` or manual NumPy slicing
+- Pre-allocate a double buffer for diffusion: two NumPy arrays swapped each frame instead of allocating a new grid
+
+**Why this matters:** Pure Python loops over thousands of particles are the main bottleneck. NumPy pushes those loops into optimized C code, typically achieving 50–100× speedups. This is the single most impactful optimization for Python.
+
+**Key concepts:** Vectorized operations, structured arrays, `np.add.at` for scatter deposits, eliminating Python-level loops.
+
+---
+
+## Step 10: Separable Box Blur
+
+**Goal:** Replace the 3x3 mean filter with a faster, more flexible separable box blur.
+
+- Implement a **two-pass blur**: first horizontal across each row, then vertical down each column
+- Use a **sliding window** (running sum) so each pass is O(W×H) regardless of blur radius — add the pixel entering the window, subtract the one leaving
+- Support a configurable **radius** parameter: radius 1 ≈ our current 3x3, but radius 5 or 10 creates smoother, wider trails that dramatically change the visual character
+- Support an **iteration count**: multiple iterations of box blur approximate a Gaussian blur (3 iterations is a good approximation)
+- Fold the **decay factor** into the final blur pass to save a separate traversal over the entire grid
+
+**With NumPy:** `scipy.ndimage.uniform_filter(grid, size=2*r+1, mode='wrap')` handles this in one call, or use a manual cumsum approach for more control.
+
+**Key concepts:** Separable filters, sliding window algorithm, configurable blur radius, combining decay with diffusion.
+
+---
+
+## Step 11: Dynamic Range Rendering
+
+**Goal:** Replace the fixed brightness clamp with adaptive percentile-based normalization and gamma correction.
+
+- Instead of `min(value / 10.0, 1.0)`, compute the **99.9th percentile** of all trail values each frame and use that as the normalization maximum
+- Multiply the percentile by a headroom factor (e.g. 1.5) to avoid full saturation
+- Apply **gamma correction**: `normalized_value ** gamma`
+  - Gamma < 1.0 (e.g. 0.5): reveals faint trail structure that would otherwise be invisible
+  - Gamma > 1.0 (e.g. 2.0): emphasizes only the strongest trails
+- Use `pygame.surfarray.blit_array()` to render the entire frame as a NumPy array in one call instead of filling individual rectangles
+
+**Why this matters:** Fixed brightness clamping means low-activity frames look almost black and high-activity frames are fully saturated. Percentile normalization ensures the full color range is always used, regardless of how much trail has accumulated. Gamma correction adds artistic control over the visual character.
+
+**With NumPy:** `max_val = np.percentile(grid, 99.9) * 1.5` — one line for the normalization reference. The entire gamma-corrected RGB array can be built with vectorized operations.
+
+**Key concepts:** Percentile normalization, gamma correction, `pygame.surfarray`, adaptive rendering.
+
+---
+
+## Step 12: Performance Tricks
+
+**Goal:** Apply low-level optimizations inspired by the Go implementation.
+
+- **Trig lookup tables** (pure Python path): Pre-compute 65,536 entries for sin and cos. Convert radians to a table index with a multiply and bitwise AND:
+  ```python
+  sin_table[int(angle * TRIG_FACTOR + TABLE_SIZE) & TABLE_MASK]
+  ```
+  Adding `TABLE_SIZE` before masking handles negative angles without branching. With NumPy, `np.sin(headings)` on the full array is already vectorized and faster than any Python-level LUT.
+
+- **Power-of-2 grid dimensions**: Use dimensions like 512×256 instead of 320×240. Toroidal wrapping becomes a bitwise AND (`& (SIZE - 1)`) instead of modulo (`% SIZE`). One CPU cycle instead of 20–40. With NumPy integer arrays this still helps.
+
+- **Double-buffered grids (buffer reuse)**: Pre-allocate two trail map arrays at startup and swap references each frame (`trail_map, temp_map = temp_map, trail_map`). Eliminates all per-frame memory allocation and GC pressure.
+
+**Key concepts:** Lookup tables, bitwise tricks, zero-allocation loops, power-of-2 optimization.
+
+---
+
+## Step 13: Variable Step Distance
+
+**Goal:** Make step distance a tunable parameter that changes network character.
+
+- Add a `STEP_DISTANCE` parameter (default 1.0) to the move function:
+  ```python
+  x = (x + cos(heading) * STEP_DISTANCE) % WIDTH
+  y = (y + sin(heading) * STEP_DISTANCE) % HEIGHT
+  ```
+- Experiment with different values:
+  - **Small steps** (0.2–0.5): Tight, dense networks. Particles react to local gradients more precisely.
+  - **Large steps** (1.5–2.0): Spread-out, sparse networks. Particles can "jump" over thin trails and form longer-range connections.
+- Make sensor distance independently tunable as well
+- Consider building a simple parameter explorer UI: keyboard controls to adjust parameters in real time and see the effect immediately
+
+**Key concepts:** Step distance as a tunable, relationship between movement scale and network topology, interactive parameter exploration.
+
+---
+
+## Step 14: Multi-Species Simulation
+
+**Goal:** Introduce multiple species with independent behavior and inter-species interactions.
+
+- Give each particle a `species` index (e.g. 0 or 1)
+- Define **per-species configs**: each species gets its own sensor angle, sensor distance, rotation angle, step distance, deposit amount, and decay factor
+- Create **per-species trail grids**: each species deposits onto its own grid
+- Define an **attraction table** — an N×N matrix controlling how each species responds to every other species' trail:
+  ```
+  # 2-species example:
+  #            Species 0    Species 1
+  # Sp. 0 [    +1.0,        -0.8   ]   ← attracted to own, repelled by other
+  # Sp. 1 [    -0.8,        +1.0   ]
+  ```
+  Diagonal values (self) are positive (~1.0), off-diagonal values (others) are negative (~-1.0), creating self-attraction and inter-species repulsion.
+- During sensing, build a **combined grid** for each species by blending all trail grids weighted by that species' row in the attraction table:
+  ```python
+  combined = sum(weight * grid for weight, grid in zip(attraction[species_idx], grids))
+  ```
+- Particles sense from the combined grid but deposit onto their own species' grid
+
+**Why this matters:** Multi-species is what produces the most visually stunning outputs — competing trail networks that carve out territories, merge at boundaries, and form dynamic equilibria. Single-species simulations always converge to the same general topology; multi-species creates far richer emergent behavior.
+
+**Key concepts:** Per-species configuration, separate trail grids, attraction/repulsion table, combined sensing grid.
+
+---
+
+## Step 15: Color Palettes and Additive Blending
+
+**Goal:** Render multi-species simulations with color — each species gets its own color, and overlapping trails blend.
+
+- Define color palettes — sets of RGB colors, one per species:
+  ```python
+  PALETTES = {
+      "warm": [(255, 100, 50), (255, 200, 50), (200, 50, 100)],
+      "cool": [(50, 100, 255), (50, 200, 200), (100, 50, 200)],
+      "neon": [(255, 0, 128), (0, 255, 128), (128, 0, 255)],
+  }
+  ```
+- For each pixel, compute the final color by **additively blending** all species' contributions:
+  ```python
+  for i, grid in enumerate(species_grids):
+      t = normalize_and_gamma(grid[y][x], max_vals[i], gamma)
+      r += palette[i][0] * t
+      g += palette[i][1] * t
+      b += palette[i][2] * t
+  pixel = (min(255, int(r)), min(255, int(g)), min(255, int(b)))
+  ```
+- Additive blending means overlapping species create new colors at boundaries (e.g. red + blue → purple where they compete)
+- Use `pygame.surfarray.blit_array()` with a NumPy RGB array for efficient rendering
+
+**Why this matters:** Color makes multi-species dynamics visible — you can see which species dominates which region, where they compete at boundaries, and how territories shift over time. It's the difference between a technical demo and genuinely beautiful generative art.
+
+**Key concepts:** Color palettes, additive color blending, per-species normalization, full-frame surface rendering.
+
+---
+
+## Step 16: Weighted Sensing
+
+**Goal:** Replace hard conditional steering with probabilistic direction selection for smoother, more organic networks.
+
+- Instead of always turning toward the strongest sensor, compute **weights** based on differences between sensor values:
+  ```python
+  w_straight = abs(left - right)    # go straight when left ≈ right
+  w_left     = abs(front - right)   # turn left when front ≈ right
+  w_right    = abs(front - left)    # turn right when front ≈ left
+  ```
+- Make a **weighted random choice** among the three directions:
+  ```python
+  roll = random.random() * (w_straight + w_left + w_right)
+  if roll < w_straight:
+      pass  # keep heading
+  elif roll < w_straight + w_left:
+      heading -= ROTATION_ANGLE
+  else:
+      heading += ROTATION_ANGLE
+  ```
+- When signals are similar, the particle might go straight even if one side is slightly stronger — introducing natural exploration
+- When one signal dominates, the particle almost certainly turns that way — preserving trail following
+
+**Why this matters:** Simple conditional steering creates sharp, angular networks because particles always commit fully to a direction. Probabilistic steering produces smoother, more organic-looking networks because particles explore more when signals are ambiguous. It's a more physically realistic model of chemotaxis.
+
+**Key concepts:** Probabilistic steering, weighted random selection, stochastic vs deterministic behavior, smooth vs angular network topology.
+
+---
+
+## Step 17: Random Grid Initialization and Final Polish
+
+**Goal:** Bootstrap pattern formation and combine all optimizations into a polished final demo.
+
+- Initialize the trail map with **random noise** instead of zeros:
+  ```python
+  trail_map = np.random.random((HEIGHT, WIDTH))
+  ```
+  This gives particles something to react to from frame 1, accelerating the self-organization process. The noise quickly gets overwhelmed by actual deposits but provides the initial symmetry-breaking.
+- Combine all previous features into a cohesive demo:
+  - Multi-species with color palettes and additive blending
+  - Separable box blur with configurable radius
+  - Percentile normalization and gamma correction
+  - Weighted probabilistic sensing
+  - Variable step distances per species
+  - Power-of-2 grid dimensions and buffer reuse
+- Add command-line options for selecting palette, number of species, and spawn mode
+- Generate random species configurations (with randomized attraction tables) for endlessly varied results
+
+**Key concepts:** Noise seeding for symmetry breaking, combining optimizations, random configuration generation, generative art.
 
 ---
 
