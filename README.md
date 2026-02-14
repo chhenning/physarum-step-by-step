@@ -7,4 +7,5 @@ It takes about 13 secs to generate a 1024x1024 png.
 
 Here is what it looks like:
 
-[sample](output.gif)
+![Slime Mold Algo in Action](output.gif)
+
