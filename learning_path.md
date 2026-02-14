@@ -318,6 +318,67 @@ Try these experiments:
 
 ---
 
+## Step 17: Offline High-Resolution Rendering
+
+**Goal:** Run the simulation headless at high resolution and save a publication-quality PNG image.
+
+- Remove the realtime display loop — no pygame window, no framerate target
+- Increase resolution to **1024x1024** (or higher) with **~1M particles per species** (~4M total with 4 species)
+- Use **fogleman-scale parameter ranges** derived from the original Go implementation:
+  - Sensor distance: 20–65 (much larger than realtime steps)
+  - Sensor angle: 0.6–1.4 radians (36°–80°)
+  - Rotation angle: 0.3–1.4 radians (18°–80°)
+  - Step distance: 1.0–1.7
+  - Decay factor: 0.1 (very aggressive — keeps only 10%, producing sharp high-contrast trails)
+- Run for a configurable number of simulation steps (e.g. 400–1000) with **progress reporting** (elapsed time, ETA, steps/second)
+- Render the final frame to a PIL `Image` using the same percentile normalization, gamma correction, and additive color blending from previous steps
+- Save the result as a PNG file
+- Add command-line arguments for steps, species count, particle count, palette, resolution, and random seed (for reproducibility)
+
+```bash
+python src/step_17_offline_render.py --steps 500 --species 4 --output render.png
+python src/step_17_offline_render.py --steps 1000 --species 3 --seed 42 --width 2048 --height 2048
+```
+
+**Why this matters:** Realtime rendering constrains resolution and particle count to what your machine can handle at 30 FPS. Offline rendering removes that constraint — you can simulate millions of particles at high resolution and let it run for minutes to produce images with far more detail and complexity than realtime allows.
+
+**Key concepts:** Headless simulation, high-resolution rendering, PIL image output, command-line configuration, reproducibility via random seeds.
+
+---
+
+## Step 18: Realtime Fogleman-Style Simulation
+
+**Goal:** Bring the fogleman-style parameters and sensing logic back into the realtime pygame loop.
+
+- Use the **classic Jones (2010) direction logic** (fogleman's `direction()` function) instead of weighted probabilistic sensing:
+  ```
+  if C > L and C > R → go straight
+  if C < L and C < R → random left or right
+  if L < R           → turn right
+  if R < L           → turn left
+  ```
+- Apply **aggressive decay** (0.1) for sharp, high-contrast trail networks — a dramatic visual difference from the gentler decay in earlier steps
+- Scale fogleman's parameter ranges for a 640×480 realtime window (sensor distance 12–40 instead of 20–65)
+- Run **~25,000 particles per species** (~100k total with 4 species) — enough for rich patterns at realtime framerates
+- Use **float32 throughout** all arrays and computations for consistency and GPU-friendly data
+- Add **interactive controls**:
+  - `P` to cycle through color palettes
+  - `R` to regenerate with new random configs and attraction tables
+  - `ESC` to quit
+- Add multiple **spawn modes** (random, ring, center, clusters) and a library of **color palettes** (fogleman, warm, cool, neon, fire, ocean, pastel, sunset, forest)
+- Print species config summaries to the terminal on each regeneration
+
+```bash
+python src/step_18_realtime_fogleman.py random fogleman 4
+python src/step_18_realtime_fogleman.py ring neon 2
+```
+
+**Why this matters:** Steps 15–16 used weighted probabilistic sensing for smoother networks. This step shows how the original Jones/fogleman deterministic sensing logic combined with aggressive decay produces a very different visual character — sharper, more angular, high-contrast trail networks that look closer to the iconic fogleman renders. Having both approaches lets you compare and choose the style you prefer.
+
+**Key concepts:** Classic Jones sensing logic, aggressive decay for high contrast, parameter scaling across resolutions, interactive regeneration, float32 pipeline.
+
+---
+
 ## References
 
 - [Sage Jenson — Physarum](https://cargocollective.com/sagejenson/physarum)
