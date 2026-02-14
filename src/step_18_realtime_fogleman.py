@@ -9,21 +9,26 @@ Builds on Step 16 (realtime multi-species) with Step 17 improvements:
   - BLUR_ITERATIONS = 2 matching fogleman
   - Fogleman color palette added
 
-    python src/step_18_realtime_fogleman.py [mode] [palette] [num_species]
-    python src/step_18_realtime_fogleman.py random fogleman 4
+    python src/step_18_realtime_fogleman.py [mode] [palette] [num_species] [save_gif]
+    python src/step_18_realtime_fogleman.py random fire 4 1
     python src/step_18_realtime_fogleman.py ring neon 2
 """
 
+from collections import deque
 import math
 import sys
 import time
 
+import imageio
+
 import numpy as np
+
 import pygame
 
+
 # --- Grid dimensions ---
-WIDTH = 640
-HEIGHT = 480
+WIDTH = 320
+HEIGHT = 240
 
 # --- Blur parameters ---
 BLUR_RADIUS = 1
@@ -33,7 +38,7 @@ BLUR_ITERATIONS = 2
 PIXEL_SCALE = 2
 SCREEN_WIDTH = WIDTH * PIXEL_SCALE
 SCREEN_HEIGHT = HEIGHT * PIXEL_SCALE
-FPS = 30
+FPS = 15
 
 # --- Rendering parameters ---
 GAMMA = np.float32(0.45)
@@ -65,6 +70,8 @@ PALETTES = {
 }
 
 PALETTE_NAMES = list(PALETTES.keys())
+
+frames = deque(maxlen=100)
 
 
 # --- Random configuration generation (fogleman-scale, scaled for 640x480) ---
@@ -118,9 +125,7 @@ def spawn_random(num_particles, num_species):
 def spawn_ring(num_particles, num_species):
     cx, cy = np.float32(WIDTH / 2), np.float32(HEIGHT / 2)
     radius = np.float32(min(WIDTH, HEIGHT) * 0.35)
-    angles = np.linspace(0, 2 * np.pi, num_particles, endpoint=False).astype(
-        np.float32
-    )
+    angles = np.linspace(0, 2 * np.pi, num_particles, endpoint=False).astype(np.float32)
     px = cx + np.cos(angles) * radius
     py = cy + np.sin(angles) * radius
     ph = angles + np.float32(np.pi)
@@ -335,6 +340,8 @@ def main():
     num_species = int(sys.argv[3]) if len(sys.argv) > 3 else 4
     num_species = max(1, min(4, num_species))
 
+    save_gif = bool(int(sys.argv[4])) if len(sys.argv) > 4 else False
+
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
@@ -379,6 +386,15 @@ def main():
         draw(screen, grids, current_palette, num_species)
         pygame.display.flip()
 
+        # --- Capture frame ---
+        if save_gif:
+            frame = pygame.surfarray.array3d(screen)
+            frame = np.transpose(
+                frame, (1, 0, 2)
+            )  # Pygame uses (width,height), GIF needs (height,width)
+            frames.append(frame)
+        # --- Capture frame done ---
+
         elapsed = (time.time() - start) * 1000
         pygame.display.set_caption(
             f"Physarum — {mode}  |  tick={tick}  "
@@ -391,6 +407,9 @@ def main():
         tick += 1
 
     pygame.quit()
+
+    if save_gif:
+        imageio.mimsave("output.gif", list(frames), fps=30)
 
 
 if __name__ == "__main__":
