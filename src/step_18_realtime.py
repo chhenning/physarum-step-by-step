@@ -9,9 +9,9 @@ Builds on Step 16 (realtime multi-species) with Step 17 improvements:
   - BLUR_ITERATIONS = 2 matching fogleman
   - Fogleman color palette added
 
-    python src/step_18_realtime_fogleman.py [mode] [palette] [num_species] [save_gif]
-    python src/step_18_realtime_fogleman.py random fire 4 1
-    python src/step_18_realtime_fogleman.py ring neon 2
+    python src/step_18_realtime.py [mode] [palette] [num_species] [save_gif]
+    python src/step_18_realtime.py random fire 4
+    python src/step_18_realtime.py ring neon 2
 """
 
 from collections import deque
@@ -35,7 +35,7 @@ BLUR_RADIUS = 1
 BLUR_ITERATIONS = 2
 
 # --- Display ---
-PIXEL_SCALE = 2
+PIXEL_SCALE = 1
 SCREEN_WIDTH = WIDTH * PIXEL_SCALE
 SCREEN_HEIGHT = HEIGHT * PIXEL_SCALE
 FPS = 15
@@ -92,8 +92,10 @@ def generate_random_configs(n):
                 "sensor_distance": np.float32(np.random.uniform(12.0, 40.0)),
                 "rotation_angle": np.float32(np.random.uniform(0.3, 1.4)),
                 "step_distance": np.float32(np.random.uniform(1.0, 1.7)),
-                "deposit": np.float32(5.0),
-                "decay": np.float32(0.1),
+                # "deposit": np.float32(5.0),
+                "deposit": np.float32(np.random.uniform(3.0, 6.0)),
+                # "decay": np.float32(0.1),
+                "decay": np.float32(np.random.uniform(0.05, 0.2)),
             }
         )
     return configs

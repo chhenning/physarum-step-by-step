@@ -8,8 +8,8 @@ Builds on Step 16 (final). Changes:
   - Configurable number of simulation steps (default 500)
   - Progress output during simulation
 
-    python src/step_17_offline_render.py [--steps 500] [--species 4] [--output out.png]
-    python src/step_17_offline_render.py --steps 1000 --species 3 --output render.png
+    python src/step_17_offline.py [--steps 500] [--species 4] [--output out.png]
+    python src/step_17_offline.py --steps 1000 --species 4 --output render.png
 """
 
 import argparse
@@ -73,8 +73,10 @@ def generate_random_configs(n):
                 "sensor_distance": np.float32(np.random.uniform(20.0, 65.0)),
                 "rotation_angle": np.float32(np.random.uniform(0.3, 1.4)),
                 "step_distance": np.float32(np.random.uniform(1.0, 1.7)),
-                "deposit": np.float32(5.0),
-                "decay": np.float32(0.1),
+                # "deposit": np.float32(5.0),
+                "deposit": np.float32(np.random.uniform(3.0, 6.0)),
+                # "decay": np.float32(0.1),
+                "decay": np.float32(np.random.uniform(0.05, 0.2)),
             }
         )
     return configs

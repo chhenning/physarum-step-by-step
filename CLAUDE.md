@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Physarum slime mold simulation — a step-by-step educational project demonstrating emergent behavior through agent-based modeling. Pure Python with terminal ASCII visualization. Each `src/step_XX_*.py` file builds incrementally on the previous one.
+Physarum slime mold simulation — a step-by-step educational project demonstrating emergent behavior through agent-based modeling. Inspired by [Michael Fogleman's physarum](https://github.com/fogleman/physarum). Progresses from terminal ASCII visualization to real-time pygame rendering and high-res offline output. Each `src/step_XX_*.py` file builds incrementally on the previous one.
 
 ## Setup and Running
 
@@ -17,7 +17,9 @@ python src/step_01_single_particle.py
 python src/step_06_emergence.py [random|ring|center|clusters]
 ```
 
-Uses **uv** for dependency management. Python >=3.13 required. Single dependency: pygame (for future visualization).
+Uses **uv** for dependency management. Python >=3.13 required.
+
+Dependencies: `pygame`, `numpy`, `scipy`, `pillow`, `imageio`, `ipykernel`.
 
 ## Architecture
 
@@ -33,6 +35,13 @@ Uses **uv** for dependency management. Python >=3.13 required. Single dependency
 9. `step_09` — NumPy vectorization (arrays instead of dicts/lists, scipy diffusion)
 10. `step_10` — Separable box blur (cumsum sliding window, configurable radius)
 11. `step_11` — Dynamic range rendering (percentile normalization, gamma correction)
+12. `step_12` — Variable step distance (real-time keyboard controls for movement/sensing params)
+13. `step_13` — Multi-species (independent species with separate trail grids, attraction/repulsion)
+14. `step_14` — Color palettes (8 named palettes, runtime cycling with P key)
+15. `step_15` — Weighted sensing (probabilistic steering replaces hard conditionals)
+16. `step_16` — Final polish (random grid init, randomized species configs, R to regenerate)
+17. `step_17` — Offline high-res rendering (headless, ~1M particles, Pillow PNG output)
+18. `step_18` — Realtime Fogleman-style (combines step 16 interactivity with fogleman params, optional GIF saving)
 
 **Each step file is self-contained** with this structure: constants → helper functions → main loop → rendering.
 
@@ -47,6 +56,11 @@ Uses **uv** for dependency management. Python >=3.13 required. Single dependency
 - Particles: NumPy arrays `x`, `y`, `heading` (each shape `(N,)`)
 - Trail map: `np.zeros((HEIGHT, WIDTH))`
 - Diffusion via `scipy.ndimage.uniform_filter`
+
+**Multi-species (steps 13+):**
+- Per-species config dicts (sensor angle/distance, rotation, step distance, deposit, decay, color)
+- Separate trail grids per species with attraction/repulsion table
+- Additive color blending for rendering
 
 ## Conventions
 
