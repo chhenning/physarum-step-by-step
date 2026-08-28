@@ -7,6 +7,9 @@ Builds on Step 16 (final). Changes:
   - Random config generation matching fogleman's Go implementation
   - Configurable number of simulation steps (default 500)
   - Progress output during simulation
+  - Performance: per-species slice views (no boolean masks), scipy
+    uniform_filter blur, bincount deposit, tensordot species mixing,
+    and the modern NumPy Generator RNG
 
     python src/step_17_offline.py [--steps 500] [--species 4] [--output out.png]
     python src/step_17_offline.py --steps 1000 --species 4 --output render.png
@@ -18,6 +21,9 @@ import time
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import uniform_filter
+
+rng = np.random.default_rng()
 
 # --- Grid dimensions (fogleman uses 1024x1024) ---
 WIDTH = 1024
@@ -69,14 +75,14 @@ def generate_random_configs(n):
     for _ in range(n):
         configs.append(
             {
-                "sensor_angle": np.float32(np.random.uniform(0.6, 1.4)),
-                "sensor_distance": np.float32(np.random.uniform(20.0, 65.0)),
-                "rotation_angle": np.float32(np.random.uniform(0.3, 1.4)),
-                "step_distance": np.float32(np.random.uniform(1.0, 1.7)),
+                "sensor_angle": np.float32(rng.uniform(0.6, 1.4)),
+                "sensor_distance": np.float32(rng.uniform(20.0, 65.0)),
+                "rotation_angle": np.float32(rng.uniform(0.3, 1.4)),
+                "step_distance": np.float32(rng.uniform(1.0, 1.7)),
                 # "deposit": np.float32(5.0),
-                "deposit": np.float32(np.random.uniform(3.0, 6.0)),
+                "deposit": np.float32(rng.uniform(3.0, 6.0)),
                 # "decay": np.float32(0.1),
-                "decay": np.float32(np.random.uniform(0.05, 0.2)),
+                "decay": np.float32(rng.uniform(0.05, 0.2)),
             }
         )
     return configs
@@ -88,9 +94,9 @@ def generate_random_attraction(n):
     for i in range(n):
         for j in range(n):
             if i == j:
-                matrix[i, j] = np.random.uniform(0.5, 1.3)
+                matrix[i, j] = rng.uniform(0.5, 1.3)
             else:
-                matrix[i, j] = np.random.uniform(-1.3, -0.4)
+                matrix[i, j] = rng.uniform(-1.3, -0.4)
     return matrix
 
 
@@ -98,42 +104,33 @@ def generate_random_attraction(n):
 
 
 def spawn_random(num_particles):
-    px = np.random.uniform(0, WIDTH, num_particles).astype(np.float32)
-    py = np.random.uniform(0, HEIGHT, num_particles).astype(np.float32)
-    ph = np.random.uniform(0, 2 * np.pi, num_particles).astype(np.float32)
+    px = rng.uniform(0, WIDTH, num_particles).astype(np.float32)
+    py = rng.uniform(0, HEIGHT, num_particles).astype(np.float32)
+    ph = rng.uniform(0, 2 * np.pi, num_particles).astype(np.float32)
     return px, py, ph
 
 
 # --- Simulation functions ---
 
 
-def combined_grid(species_idx, grids, attraction):
-    weights = attraction[species_idx]
-    result = np.zeros_like(grids[0])  # already float32 from grid init
-    for w, g in zip(weights, grids):
-        result += np.float32(w) * g
-    return result
-
-
-def sense_species(px, py, ph, mask, trail_map, cfg):
+def sense_species(spx, spy, sph, trail_map, cfg):
     """Fogleman-style sensing: classic Jones (2010) direction logic.
 
     if C > L and C > R → go straight
     if C < L and C < R → random left or right
     if L < R           → turn right (+rotation_angle)
     if R < L           → turn left  (-rotation_angle)
+
+    Operates on per-species slice views; updates sph in place.
     """
-    spx = px[mask]
-    spy = py[mask]
-    sph = ph[mask]
     sensor_angle = cfg["sensor_angle"]
     sensor_distance = cfg["sensor_distance"]
     rotation_angle = cfg["rotation_angle"]
 
     def sample(angle_offset):
         angles = sph + angle_offset
-        sx = (spx + np.cos(angles) * sensor_distance).astype(int) % WIDTH
-        sy = (spy + np.sin(angles) * sensor_distance).astype(int) % HEIGHT
+        sx = (spx + np.cos(angles) * sensor_distance).astype(np.int32) % WIDTH
+        sy = (spy + np.sin(angles) * sensor_distance).astype(np.int32) % HEIGHT
         return trail_map[sy, sx]
 
     C = sample(0)
@@ -146,50 +143,35 @@ def sense_species(px, py, ph, mask, trail_map, cfg):
     # Center strongest → go straight (da stays 0)
     # Center weakest → random left or right
     both_stronger = (C < L) & (C < R)
-    random_sign = (np.random.randint(0, 2, size=spx.size) * 2 - 1).astype(np.float32)
-    da = np.where(both_stronger, rotation_angle * random_sign, da)
+    signs = rng.integers(0, 2, size=np.count_nonzero(both_stronger), dtype=np.int8)
+    da[both_stronger] = rotation_angle * (signs * 2 - 1).astype(np.float32)
 
     # Left weaker than right → turn right (but not if center is strongest or weakest)
     neither = ~((C > L) & (C > R)) & ~both_stronger
-    da = np.where(neither & (L < R), rotation_angle, da)
-    da = np.where(neither & (R < L), -rotation_angle, da)
+    da[neither & (L < R)] = rotation_angle
+    da[neither & (R < L)] = -rotation_angle
 
-    ph[mask] = sph + da
-
-
-def move_species(px, py, ph, mask, step_distance):
-    sph = ph[mask]
-    px[mask] = (px[mask] + np.cos(sph) * step_distance) % WIDTH
-    py[mask] = (py[mask] + np.sin(sph) * step_distance) % HEIGHT
+    sph += da
 
 
-def deposit_species(px, py, mask, grid, deposit_amount):
-    gx = px[mask].astype(int) % WIDTH
-    gy = py[mask].astype(int) % HEIGHT
-    np.add.at(grid, (gy, gx), deposit_amount)
+def move_species(spx, spy, sph, step_distance):
+    spx += np.cos(sph) * step_distance
+    spx %= WIDTH
+    spy += np.sin(sph) * step_distance
+    spy %= HEIGHT
 
 
-def separable_box_blur(grid, radius):
-    d = 2 * radius + 1
-    inv_d = np.float32(1.0 / d)
-    h, w = grid.shape
-
-    padded = np.pad(grid, ((0, 0), (radius, radius)), mode="wrap")
-    cs = np.zeros((h, padded.shape[1] + 1), dtype=np.float32)
-    cs[:, 1:] = np.cumsum(padded, axis=1)
-    blurred = (cs[:, d:] - cs[:, :w]) * inv_d
-
-    padded = np.pad(blurred, ((radius, radius), (0, 0)), mode="wrap")
-    cs = np.zeros((padded.shape[0] + 1, w), dtype=np.float32)
-    cs[1:, :] = np.cumsum(padded, axis=0)
-    blurred = (cs[d:, :] - cs[:h, :]) * inv_d
-
-    return blurred
+def deposit_species(spx, spy, grid, deposit_amount):
+    gx = spx.astype(np.int32) % WIDTH
+    gy = spy.astype(np.int32) % HEIGHT
+    counts = np.bincount(gy * WIDTH + gx, minlength=WIDTH * HEIGHT)
+    grid += counts.astype(np.float32).reshape(HEIGHT, WIDTH) * deposit_amount
 
 
 def blur_and_decay(grid, radius, iterations, decay_factor):
+    size = 2 * radius + 1
     for _ in range(iterations):
-        grid = separable_box_blur(grid, radius)
+        grid = uniform_filter(grid, size=size, mode="wrap")
     grid *= decay_factor
     return grid
 
@@ -222,7 +204,7 @@ def render_image(grids, palette_colors, num_species):
 
 
 def main():
-    global WIDTH, HEIGHT
+    global WIDTH, HEIGHT, rng
 
     parser = argparse.ArgumentParser(description="Physarum offline renderer")
     parser.add_argument(
@@ -267,7 +249,7 @@ def main():
     num_particles = args.particles * num_species
 
     if args.seed is not None:
-        np.random.seed(args.seed)
+        rng = np.random.default_rng(args.seed)
 
     # Generate configs
     configs = generate_random_configs(num_species)
@@ -298,29 +280,30 @@ def main():
     )
     print()
 
-    # Spawn particles
+    # Spawn particles — contiguous per-species blocks, so slices are zero-copy views
     px, py, ph = spawn_random(num_particles)
-    species = np.repeat(np.arange(num_species), args.particles)
-    masks = [species == s for s in range(num_species)]
-
-    # Initialize grids with random noise
-    grids = [
-        np.random.random((HEIGHT, WIDTH)).astype(np.float32) * np.float32(0.1)
-        for _ in range(num_species)
+    slices = [
+        slice(s * args.particles, (s + 1) * args.particles)
+        for s in range(num_species)
     ]
+
+    # Initialize grids with random noise: one (num_species, H, W) array
+    grids = rng.random((num_species, HEIGHT, WIDTH), dtype=np.float32) * np.float32(0.1)
 
     # Run simulation
     t_start = time.time()
     for step in range(args.steps):
-        # Sense
+        # Sense — all combined grids at once: (S,S) @ (S,H,W) -> (S,H,W)
+        combined = np.tensordot(attraction, grids, axes=1)
         for s, cfg in enumerate(configs):
-            cg = combined_grid(s, grids, attraction)
-            sense_species(px, py, ph, masks[s], cg, cfg)
+            sl = slices[s]
+            sense_species(px[sl], py[sl], ph[sl], combined[s], cfg)
 
         # Move & deposit
         for s, cfg in enumerate(configs):
-            move_species(px, py, ph, masks[s], cfg["step_distance"])
-            deposit_species(px, py, masks[s], grids[s], cfg["deposit"])
+            sl = slices[s]
+            move_species(px[sl], py[sl], ph[sl], cfg["step_distance"])
+            deposit_species(px[sl], py[sl], grids[s], cfg["deposit"])
 
         # Blur & decay
         for s, cfg in enumerate(configs):
